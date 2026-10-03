@@ -82,18 +82,16 @@ private struct StorageSection: View {
 
     var body: some View {
         Section {
-            TextField("Endpoint (https://…)", text: $model.endpoint)
-                .textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
-            TextField("Region (auto for R2)", text: $model.region)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
-            TextField("Bucket", text: $model.bucket)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
-            TextField("Folder prefix (optional)", text: $model.prefix)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
+            field("Endpoint", "https://…", text: $model.endpoint, keyboard: .URL)
+            field("Region", "auto for R2", text: $model.region)
+            field("Bucket", "photos", text: $model.bucket)
+            field("Prefix", "optional", text: $model.prefix)
             Toggle("Path-style URLs", isOn: $model.usePathStyle)
-            TextField("Access key ID", text: $model.accessKeyID)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
-            SecureField("Secret access key", text: $model.secretAccessKey)
+            field("Access key", "ID", text: $model.accessKeyID)
+            LabeledContent("Secret") {
+                SecureField("secret access key", text: $model.secretAccessKey)
+                    .multilineTextAlignment(.trailing)
+            }
             HStack {
                 Button("Save") { model.save() }
                 Spacer()
@@ -103,6 +101,18 @@ private struct StorageSection: View {
             Text("Storage (S3 compatible)")
         } footer: {
             Text("This build uploads only under \(model.uploadURLBase).")
+        }
+    }
+
+    /// Label on the left, value on the right, so filled fields stay identifiable.
+    private func field(_ label: String, _ prompt: String, text: Binding<String>,
+                       keyboard: UIKeyboardType = .default) -> some View {
+        LabeledContent(label) {
+            TextField(prompt, text: text)
+                .multilineTextAlignment(.trailing)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .keyboardType(keyboard)
         }
     }
 }
