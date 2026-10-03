@@ -15,9 +15,15 @@ S3-compatible storage, such as Cloudflare R2, AWS S3, MinIO or Backblaze B2, **i
 
 Screenshots come from the app's demo mode. CI makes them again on every push to `main`.
 
-| Backing up | Idle | Schedule and history | Dark mode |
-|---|---|---|---|
-| ![Backing up](docs/gallery/1-backing-up.png) | ![Idle](docs/gallery/2-idle.png) | ![Schedule](docs/gallery/3-schedule.png) | ![Dark](docs/gallery/4-dark.png) |
+| Backing up | Up to date | Settings |
+|---|---|---|
+| ![Backing up](docs/gallery/1-backing-up.png) | ![Up to date](docs/gallery/2-up-to-date.png) | ![Settings](docs/gallery/3-settings.png) |
+| **Help** | **Dark mode** | **First run (日本語)** |
+| ![Help](docs/gallery/4-help.png) | ![Dark](docs/gallery/5-dark.png) | ![Japanese](docs/gallery/6-japanese.png) |
+
+The app follows Apple's iOS patterns: a large-title status screen with the main action in thumb
+reach, settings one tap away, SF Symbols, Dynamic Type, haptics, VoiceOver labels, and
+English, 简体中文, 日本語 and 한국어.
 
 ## How it works
 
@@ -83,7 +89,7 @@ cd ShoeboxCore
 xcodebuild test -scheme ShoeboxCore -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
-To see demo mode, launch the app with the arguments `-demo active`, `-demo idle` or `-demo settings`.
+To see demo mode, launch the app with `-demo active`, `idle`, `settings`, `help` or `setup`.
 
 ## Build the app (Mac, Xcode 26.1+)
 

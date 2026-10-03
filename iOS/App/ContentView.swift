@@ -1,164 +1,258 @@
-import Photos
 import ShoeboxCore
 import SwiftUI
 
+enum Route: Hashable {
+    case settings, help
+}
+
+/// Main screen: what the backup is doing now, and what it did before.
+/// Settings are one tap away in the navigation bar; the main action sits in
+/// thumb reach at the bottom.
 struct ContentView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var path: [Route] = ContentView.initialPath
 
-    enum Part { case status, storage, schedule, content, history }
-
-    /// The "settings" demo scenario starts at the lower sections so the
-    /// screenshot shows them without scrolling.
-    private func show(_ part: Part) -> Bool {
-        guard AppEnvironment.demoScenario == "settings" else { return true }
-        return [.schedule, .content, .history].contains(part)
+    /// Demo scenarios can open a deeper screen for the gallery.
+    private static var initialPath: [Route] {
+        switch AppEnvironment.demoScenario {
+        case "settings": return [.settings]
+        case "help": return [.settings, .help]
+        default: return []
+        }
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                if show(.status) { StatusSection() }
-                if show(.storage) { StorageSection() }
-                if show(.schedule) { ScheduleSection() }
-                if show(.content) { ContentSection() }
-                if show(.history) { HistorySection() }
+        NavigationStack(path: $path) {
+            List {
+                StatusCard()
+                HistorySection()
             }
+            .listStyle(.insetGrouped)
             .navigationTitle("Shoebox")
-            .disabled(model.busy)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(value: Route.settings) {
+                        Image(systemName: "gearshape")
+                    }
+                    .accessibilityLabel("Settings")
+                }
+            }
             .refreshable { model.refreshState() }
-            .alert("Shoebox", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(model.message ?? "")
+            .safeAreaInset(edge: .bottom) { BackUpButton() }
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .settings: SettingsView()
+                case .help: HelpView()
+                }
             }
+        }
+        .sensoryFeedback(trigger: model.haptic) { _, event in
+            event.kind == .success ? .success : .warning
         }
     }
 }
 
-private struct StatusSection: View {
+// MARK: Status
+
+private struct StatusCard: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        Section("Status") {
-            if model.photoAccess != .authorized || !model.backgroundEnabled {
-                Button("Turn on background backup") {
-                    Task { await model.enableBackgroundBackup() }
-                }
-            } else {
-                Label("Background backup is on", systemImage: "checkmark.circle")
-            }
-
-            if let active = model.state.active {
+        Section {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: symbol)
+                    .font(.title2)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(tint)
+                    .frame(width: 32)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Backing up \(active.id.date.formatted(date: .abbreviated, time: .shortened))")
-                    ProgressView(value: Double(min(active.cursor.asset, active.totalAssets)),
-                                 total: Double(max(active.totalAssets, 1)))
-                    Text("\(active.uploadedCount) files uploaded · \(active.inFlight.count) in progress · \(active.failed.count) failed")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(title).font(.headline)
+                    Text(detail).font(.subheadline).foregroundStyle(.secondary)
+                    if let active = model.state.active {
+                        ProgressBlock(active: active).padding(.top, 6)
+                    }
                 }
-            } else if let last = model.state.lastCompleted {
-                LabeledContent("Last backup", value: last.completedAt.formatted(date: .abbreviated, time: .shortened))
-                if let next = model.nextDue {
-                    LabeledContent("Next backup", value: next.formatted(date: .abbreviated, time: .omitted))
+            }
+            .padding(.vertical, 6)
+            .accessibilityElement(children: .combine)
+
+            if model.isConfigured && !model.backgroundEnabled {
+                Button {
+                    Task { await model.setBackgroundBackup(true) }
+                } label: {
+                    Label("Turn on background backup", systemImage: "moon.zzz")
                 }
-            } else {
-                Text("No backups yet").foregroundStyle(.secondary)
             }
+            if !model.isConfigured {
+                NavigationLink(value: Route.settings) {
+                    Label("Add storage", systemImage: "externaldrive.badge.plus")
+                }
+            }
+            if model.state.active == nil, model.isConfigured, let next = model.nextDue {
+                LabeledContent("Next backup", value: next.formatted(date: .abbreviated, time: .omitted))
+            }
+        }
+    }
 
-            if let error = model.state.lastError {
-                Text(error).font(.caption).foregroundStyle(.red)
-            }
+    private enum Kind { case notSetUp, off, running, attention, upToDate, waiting }
 
-            Button("Back up now") {
-                Task { await model.backUpNow() }
-            }
-            .disabled(model.state.active != nil)
+    private var kind: Kind {
+        if !model.isConfigured { return .notSetUp }
+        if model.state.active != nil { return .running }
+        if model.state.lastError != nil { return .attention }
+        if !model.backgroundEnabled { return .off }
+        return model.state.lastCompleted == nil ? .waiting : .upToDate
+    }
+
+    private var symbol: String {
+        switch kind {
+        case .notSetUp: return "externaldrive.badge.questionmark"
+        case .off: return "pause.circle"
+        case .running: return "arrow.triangle.2.circlepath.circle"
+        case .attention: return "exclamationmark.triangle"
+        case .upToDate: return "checkmark.circle"
+        case .waiting: return "clock"
+        }
+    }
+
+    private var tint: Color {
+        switch kind {
+        case .running: return .accentColor
+        case .attention: return .orange
+        case .upToDate: return .green
+        default: return .secondary
+        }
+    }
+
+    private var title: LocalizedStringKey {
+        switch kind {
+        case .notSetUp: return "Not set up"
+        case .off: return "Background backup is off"
+        case .running: return "Backing up"
+        case .attention: return "Needs attention"
+        case .upToDate: return "Up to date"
+        case .waiting: return "Waiting for the first backup"
+        }
+    }
+
+    private var detail: String {
+        switch kind {
+        case .notSetUp:
+            return String(localized: "Add your S3 or R2 storage to start.")
+        case .off:
+            return String(localized: "Turn it on to back up while Shoebox is closed.")
+        case .running:
+            let started = model.state.active!.startedAt.formatted(date: .abbreviated, time: .shortened)
+            return String(localized: "Started \(started). Continues in the background.")
+        case .attention:
+            return model.state.lastError ?? ""
+        case .upToDate:
+            let last = model.state.lastCompleted!.completedAt.formatted(date: .abbreviated, time: .shortened)
+            return String(localized: "Last backup \(last).")
+        case .waiting:
+            return String(localized: "iOS starts it soon, usually while charging on Wi-Fi.")
         }
     }
 }
 
-private struct StorageSection: View {
-    @EnvironmentObject private var model: AppModel
+private struct ProgressBlock: View {
+    let active: ActiveSnapshot
+
+    private var fraction: Double {
+        Double(min(active.cursor.asset, active.totalAssets)) / Double(max(active.totalAssets, 1))
+    }
 
     var body: some View {
-        Section {
-            field("Endpoint", "https://…", text: $model.endpoint, keyboard: .URL)
-            field("Region", "auto for R2", text: $model.region)
-            field("Bucket", "photos", text: $model.bucket)
-            field("Prefix", "optional", text: $model.prefix)
-            Toggle("Path-style URLs", isOn: $model.usePathStyle)
-            field("Access key", "ID", text: $model.accessKeyID)
-            LabeledContent("Secret") {
-                SecureField("secret access key", text: $model.secretAccessKey)
-                    .multilineTextAlignment(.trailing)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            ProgressView(value: fraction)
+                .accessibilityLabel("Backup progress")
+                .accessibilityValue(fraction.formatted(.percent.precision(.fractionLength(0))))
             HStack {
-                Button("Save") { model.save() }
+                Text("\(active.uploadedCount.formatted()) files uploaded")
                 Spacer()
-                Button("Test connection") { Task { await model.testConnection() } }
+                Text(fraction.formatted(.percent.precision(.fractionLength(0))))
             }
-        } header: {
-            Text("Storage (S3 compatible)")
-        } footer: {
-            Text("This build uploads only under \(model.uploadURLBase).")
-        }
-    }
-
-    /// Label on the left, value on the right, so filled fields stay identifiable.
-    private func field(_ label: String, _ prompt: String, text: Binding<String>,
-                       keyboard: UIKeyboardType = .default) -> some View {
-        LabeledContent(label) {
-            TextField(prompt, text: text)
-                .multilineTextAlignment(.trailing)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(keyboard)
+            .font(.footnote)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            if !active.failed.isEmpty {
+                Label("\(active.failed.count.formatted()) failed", systemImage: "exclamationmark.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
         }
     }
 }
 
-private struct ScheduleSection: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Section {
-            Stepper("Every \(model.intervalDays) day\(model.intervalDays == 1 ? "" : "s")",
-                    value: $model.intervalDays, in: BackupSchedule.dayRange)
-            Stepper("Keep latest \(model.keepLatest)", value: $model.keepLatest, in: RetentionPolicy.keepRange)
-        } header: {
-            Text("Schedule")
-        } footer: {
-            Text("Each backup is a full copy of the library. Older backups beyond the limit are deleted. iOS decides the exact time, usually while charging on Wi-Fi. Tap Save after changing.")
-        }
-    }
-}
-
-private struct ContentSection: View {
-    @EnvironmentObject private var model: AppModel
-
-    var body: some View {
-        Section("Include") {
-            Toggle("Videos", isOn: $model.includeVideos)
-            Toggle("Live Photo motion", isOn: $model.includeLivePhotoVideos)
-            Toggle("Edited versions", isOn: $model.includeEdits)
-        }
-    }
-}
+// MARK: History
 
 private struct HistorySection: View {
     @EnvironmentObject private var model: AppModel
 
     var body: some View {
-        if !model.state.history.isEmpty {
-            Section("History") {
-                ForEach(model.state.history, id: \.id) { item in
-                    VStack(alignment: .leading) {
+        Section {
+            if model.state.history.isEmpty {
+                Text("Each finished backup shows here.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(model.state.history, id: \.id) { item in
+                HStack(spacing: 12) {
+                    Image(systemName: item.failedFiles == 0 ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .foregroundStyle(item.failedFiles == 0 ? .green : .orange)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(item.startedAt.formatted(date: .abbreviated, time: .shortened))
-                        Text("\(item.uploadedFiles) files · \(item.failedFiles) failed · \(item.skippedAssets) skipped")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Text(summary(item))
+                            .font(.footnote)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
                     }
                 }
+                .accessibilityElement(children: .combine)
+            }
+        } header: {
+            Text("History")
+        } footer: {
+            if !model.state.history.isEmpty {
+                Text("Shoebox keeps the latest \(model.keepLatest.formatted()) backups and deletes older ones.")
             }
         }
+    }
+
+    private func summary(_ item: SnapshotSummary) -> String {
+        var parts = [String(localized: "\(item.uploadedFiles.formatted()) files")]
+        if item.failedFiles > 0 { parts.append(String(localized: "\(item.failedFiles.formatted()) failed")) }
+        if item.skippedAssets > 0 { parts.append(String(localized: "\(item.skippedAssets.formatted()) skipped")) }
+        return parts.joined(separator: " · ")
+    }
+}
+
+// MARK: Primary action
+
+private struct BackUpButton: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Button {
+            Task { await model.backUpNow() }
+        } label: {
+            Group {
+                if model.busy {
+                    ProgressView()
+                } else if model.state.active != nil {
+                    Text("Backing up…")
+                } else {
+                    Label("Back up now", systemImage: "arrow.up.circle")
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .disabled(!model.isConfigured || model.state.active != nil || model.busy)
+        .padding(.horizontal)
+        .padding(.bottom, 8)
+        .background(.bar)
     }
 }

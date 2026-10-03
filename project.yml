@@ -14,6 +14,7 @@ options:
   deploymentTarget:
     iOS: "26.1"
   createIntermediateGroups: true
+  developmentLanguage: en
 
 settings:
   base:
@@ -49,6 +50,8 @@ targets:
       path: iOS/App/Info.plist
       properties:
         CFBundleDisplayName: Shoebox
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, zh-Hans, ja, ko]
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSPhotoLibraryUsageDescription: Shoebox backs up your photos and videos to your own S3-compatible storage.

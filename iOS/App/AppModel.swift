@@ -3,51 +3,76 @@ import Photos
 import ShoeboxCore
 
 /// UI state: an editable copy of the settings plus the engine's status.
+/// Settings save as you change them; problems show inline, never in alerts.
 @MainActor
 final class AppModel: ObservableObject {
     // Storage form
-    @Published var endpoint = ""
-    @Published var region = "auto"
-    @Published var bucket = ""
-    @Published var prefix = ""
-    @Published var usePathStyle = true
-    @Published var accessKeyID = ""
-    @Published var secretAccessKey = ""
+    @Published var endpoint = "" { didSet { edited() } }
+    @Published var region = "auto" { didSet { edited() } }
+    @Published var bucket = "" { didSet { edited() } }
+    @Published var prefix = "" { didSet { edited() } }
+    @Published var usePathStyle = true { didSet { edited() } }
+    @Published var accessKeyID = "" { didSet { edited() } }
+    @Published var secretAccessKey = "" { didSet { edited() } }
 
     // Schedule & content
-    @Published var intervalDays = 7
-    @Published var keepLatest = 3
-    @Published var includeVideos = true
-    @Published var includeLivePhotoVideos = true
-    @Published var includeEdits = true
+    @Published var intervalDays = 7 { didSet { edited() } }
+    @Published var keepLatest = 3 { didSet { edited() } }
+    @Published var includeVideos = true { didSet { edited() } }
+    @Published var includeLivePhotoVideos = true { didSet { edited() } }
+    @Published var includeEdits = true { didSet { edited() } }
 
     // Status
     @Published private(set) var state = EngineState()
     @Published private(set) var photoAccess: PHAuthorizationStatus = .notDetermined
     @Published private(set) var backgroundEnabled = false
-    @Published var message: String?
+    @Published private(set) var isConfigured = false
+    /// Validation problems of the form; shown only after the user edits.
+    @Published private(set) var formProblems: [String] = []
+    @Published private(set) var connection: ConnectionCheck = .idle
+    @Published private(set) var backgroundProblem: String?
     @Published private(set) var busy = false
+    /// Changes when a haptic should play.
+    @Published private(set) var haptic = HapticEvent(kind: .success)
+
+    enum ConnectionCheck: Equatable {
+        case idle, checking, ok
+        case failed(String)
+    }
+
+    struct HapticEvent: Equatable {
+        enum Kind { case success, warning }
+        var kind: Kind
+        var id = UUID()
+    }
 
     private let repository = SettingsRepository()
+    private var loading = false
+    private var userEdited = false
+    private var saveTask: Task<Void, Never>?
 
     init() {
+        loading = true
         if let scenario = AppEnvironment.demoScenario {
             loadDemo(scenario)
         } else {
             load()
         }
+        loading = false
     }
 
     var isDemo: Bool { AppEnvironment.demoScenario != nil }
 
     var uploadURLBase: String {
         if isDemo { return endpoint }
-        return AppEnvironment.uploadURLBase?.absoluteString ?? "(not set)"
+        return AppEnvironment.uploadURLBase?.absoluteString ?? "—"
     }
 
     var nextDue: Date? {
         BackupSchedule(intervalDays: intervalDays).nextDue(lastCompletedStart: state.lastCompleted?.startedAt)
     }
+
+    var visibleProblems: [String] { userEdited ? formProblems : [] }
 
     // MARK: Lifecycle
 
@@ -87,10 +112,13 @@ final class AppModel: ObservableObject {
         includeVideos = settings.resources.includeVideos
         includeLivePhotoVideos = settings.resources.includeLivePhotoVideos
         includeEdits = settings.resources.includeEdits
-        if let credentials = repository.loadCredentials() {
+        let credentials = repository.loadCredentials()
+        if let credentials {
             accessKeyID = credentials.accessKeyID
             secretAccessKey = credentials.secretAccessKey
         }
+        isConfigured = settings.s3 != nil && credentials?.isComplete == true
+        formProblems = formSettings().1
     }
 
     /// Builds settings from the form; returns validation problems.
@@ -102,107 +130,129 @@ final class AppModel: ObservableObject {
                               bucket: bucket.trimmingCharacters(in: .whitespaces),
                               prefix: prefix, usePathStyle: usePathStyle)
             settings.s3 = s3
-            if let base = AppEnvironment.uploadURLBase, !s3.isAllowed(byUploadURLBase: base) {
-                problems.append("This build only uploads under \(base.absoluteString). Change SHOEBOX_UPLOAD_URL_BASE in project.yml to use another endpoint.")
+            if let base = AppEnvironment.uploadURLBase, !isDemo, !s3.isAllowed(byUploadURLBase: base) {
+                problems.append(String(localized: "This build uploads only under \(base.absoluteString)."))
             }
         } else {
-            problems.append("Endpoint is not a valid URL")
+            settings.s3 = nil
+            problems.append(String(localized: "Endpoint is not a valid URL."))
         }
         settings.intervalDays = intervalDays
         settings.keepLatest = keepLatest
         settings.resources = ResourcePolicy(includeVideos: includeVideos, includeLivePhotoVideos: includeLivePhotoVideos,
                                             includeEdits: includeEdits)
-        problems += settings.validate().filter { !problems.contains($0) }
-        if accessKeyID.isEmpty || secretAccessKey.isEmpty { problems.append("Access key ID and secret are required") }
+        if settings.s3 != nil {
+            problems += settings.validate().filter { !problems.contains($0) }
+        }
+        if accessKeyID.isEmpty || secretAccessKey.isEmpty {
+            problems.append(String(localized: "Access key and secret are required."))
+        }
         return (settings, problems)
     }
 
+    private func edited() {
+        guard !loading else { return }
+        userEdited = true
+        connection = .idle
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            self?.save()
+        }
+    }
+
+    /// Saves when the form is valid. Invalid input stays on screen with the
+    /// problem under it; the last valid settings stay in effect.
     func save() {
         let (settings, problems) = formSettings()
-        guard problems.isEmpty else {
-            message = problems.joined(separator: "\n")
-            return
-        }
+        formProblems = problems
+        guard problems.isEmpty, !isDemo else { return }
         do {
             let previous = repository.loadSettings()
             try repository.saveSettings(settings)
             try repository.saveCredentials(S3Credentials(accessKeyID: accessKeyID.trimmingCharacters(in: .whitespaces),
                                                          secretAccessKey: secretAccessKey.trimmingCharacters(in: .whitespaces)))
+            isConfigured = true
             if previous.keepLatest != settings.keepLatest {
                 try EngineFactory.make().requestRetention()
             }
-            message = "Saved"
         } catch {
-            message = "Could not save: \(error.localizedDescription)"
+            formProblems = [String(localized: "Could not save: \(error.localizedDescription)")]
         }
     }
 
     // MARK: Actions
 
-    /// Lists the bucket and writes + deletes a small probe object, so bad keys
+    /// Lists the bucket, writes and deletes a small probe object, so bad keys
     /// or permissions show up now instead of in the background.
     func testConnection() async {
+        userEdited = true
         let (settings, problems) = formSettings()
-        guard problems.isEmpty, let s3 = settings.s3 else {
-            message = problems.joined(separator: "\n")
+        formProblems = problems
+        guard problems.isEmpty, let s3 = settings.s3 else { return }
+        if isDemo {
+            connection = .ok
             return
         }
-        busy = true
-        defer { busy = false }
+        connection = .checking
         let client = S3Client(config: s3, credentials: S3Credentials(accessKeyID: accessKeyID, secretAccessKey: secretAccessKey),
                               transport: URLSessionTransport())
-        let probe = KeyLayout(prefix: s3.normalizedPrefix).snapshotsRoot + ".shoebox-probe"
+        let root = KeyLayout(prefix: s3.normalizedPrefix).snapshotsRoot
         do {
-            _ = try await client.listObjects(prefix: KeyLayout(prefix: s3.normalizedPrefix).snapshotsRoot, maxKeys: 1)
-            try await client.putObject(key: probe, body: Data("ok".utf8), contentType: "text/plain")
-            _ = try await client.deleteObjects(keys: [probe])
-            message = "Connection OK: list, write and delete work"
+            _ = try await client.listObjects(prefix: root, maxKeys: 1)
+            try await client.putObject(key: root + ".shoebox-probe", body: Data("ok".utf8), contentType: "text/plain")
+            _ = try await client.deleteObjects(keys: [root + ".shoebox-probe"])
+            connection = .ok
+            haptic = HapticEvent(kind: .success)
         } catch {
-            message = "Connection failed: \(error)"
+            connection = .failed(String(describing: error))
+            haptic = HapticEvent(kind: .warning)
         }
     }
 
-    /// Photo access + turn on the background upload extension.
-    func enableBackgroundBackup() async {
-        let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-        photoAccess = status
-        guard status == .authorized else {
-            message = "Shoebox needs Full Access to photos (Settings → Privacy → Photos)."
+    /// Photo access + the background upload extension.
+    func setBackgroundBackup(_ on: Bool) async {
+        backgroundProblem = nil
+        guard !isDemo else {
+            backgroundEnabled = on
             return
         }
-        do {
-            try PHPhotoLibrary.shared().setUploadJobExtensionEnabled(true)
-            backgroundEnabled = PHPhotoLibrary.shared().uploadJobExtensionEnabled
-            message = backgroundEnabled ? "Background backup is on" : "iOS did not enable background backup"
-        } catch {
-            message = "Could not enable background backup: \(error.localizedDescription)"
+        if on {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
+            photoAccess = status
+            guard status == .authorized else {
+                backgroundProblem = String(localized: "Shoebox needs Full Access to photos. Change it in Settings › Privacy › Photos.")
+                haptic = HapticEvent(kind: .warning)
+                return
+            }
         }
-    }
-
-    func disableBackgroundBackup() {
         do {
-            try PHPhotoLibrary.shared().setUploadJobExtensionEnabled(false)
-            backgroundEnabled = false
+            try PHPhotoLibrary.shared().setUploadJobExtensionEnabled(on)
         } catch {
-            message = error.localizedDescription
+            backgroundProblem = error.localizedDescription
+            haptic = HapticEvent(kind: .warning)
         }
+        backgroundEnabled = PHPhotoLibrary.shared().uploadJobExtensionEnabled
     }
 
     func backUpNow() async {
+        guard !isDemo else { return }
         busy = true
         defer { busy = false }
         do {
             try EngineFactory.make().requestBackupNow()
         } catch {
-            message = "\(error)"
+            haptic = HapticEvent(kind: .warning)
             return
         }
         let outcome = await Self.runEngineOnce()
         refreshState()
         switch outcome {
-        case .processing: message = "Backup started. Uploads continue in the background."
-        case .completed: message = state.lastError ?? "Backup complete"
-        case .failure(let reason): message = "Backup problem: \(reason)"
+        case .processing, .completed:
+            haptic = HapticEvent(kind: state.lastError == nil ? .success : .warning)
+        case .failure:
+            haptic = HapticEvent(kind: .warning)
         }
     }
 
@@ -227,6 +277,7 @@ final class AppModel: ObservableObject {
         keepLatest = 3
         photoAccess = .authorized
         backgroundEnabled = true
+        isConfigured = true
 
         // Fixed clock so gallery screenshots don't change between CI runs.
         let now = Date(timeIntervalSince1970: 1_790_000_000)
@@ -249,6 +300,11 @@ final class AppModel: ObservableObject {
                 ("k\($0)", InFlightJob(assetID: "a\($0)", resource: ResourceInfo(kind: .photo, originalFilename: "x.heic", index: 0), attempts: 0))
             })
             demo.active = active
+        }
+        if scenario == "setup" {
+            isConfigured = false
+            backgroundEnabled = false
+            demo = EngineState()
         }
         state = demo
     }
