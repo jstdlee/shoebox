@@ -3,6 +3,17 @@
 Each version has one section. The release workflow copies the section of the tagged
 version into the GitHub release page.
 
+## v0.1.1 — 2026-10-03
+
+### Added
+
+- Help › Demo › **Show sample data**: see the app with sample backups on your own iPhone.
+  Nothing is uploaded. A row on the main screen turns it off again.
+
+### Changed
+
+- The release IPA can be built with a real upload address (repo variable `SHOEBOX_UPLOAD_URL_BASE`).
+
 ## v0.1.0 — 2026-10-03
 
 First release.

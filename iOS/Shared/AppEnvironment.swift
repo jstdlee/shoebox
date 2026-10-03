@@ -25,10 +25,20 @@ enum AppEnvironment {
     }
 
     /// `-demo <scenario>` launch argument: sample data for screenshots, no PhotoKit or network.
+    /// Or the "Show sample data" switch in Help (stored in UserDefaults).
     static var demoScenario: String? {
         let args = ProcessInfo.processInfo.arguments
-        guard let i = args.firstIndex(of: "-demo") else { return nil }
-        return args.indices.contains(i + 1) ? args[i + 1] : "active"
+        if let i = args.firstIndex(of: "-demo") {
+            return args.indices.contains(i + 1) ? args[i + 1] : "active"
+        }
+        return UserDefaults.standard.string(forKey: demoDefaultsKey)
+    }
+
+    static let demoDefaultsKey = "ShoeboxDemo"
+
+    /// Sample data turned on by the user (not by a screenshot launch argument).
+    static var demoFromUser: Bool {
+        !ProcessInfo.processInfo.arguments.contains("-demo") && UserDefaults.standard.string(forKey: demoDefaultsKey) != nil
     }
 
     static var engineDirectory: URL { containerURL.appendingPathComponent("engine", isDirectory: true) }

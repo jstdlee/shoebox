@@ -77,6 +77,14 @@ private struct StatusCard: View {
             .padding(.vertical, 6)
             .accessibilityElement(children: .combine)
 
+            if AppEnvironment.demoFromUser {
+                Button {
+                    model.setDemo(false)
+                } label: {
+                    Label("Showing sample data. Tap to turn it off.", systemImage: "eye")
+                }
+            }
+
             if model.isConfigured && !model.backgroundEnabled {
                 Button {
                     Task { await model.setBackgroundBackup(true) }

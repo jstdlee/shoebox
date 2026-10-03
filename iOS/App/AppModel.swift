@@ -264,7 +264,30 @@ final class AppModel: ObservableObject {
         }.value
     }
 
-    // MARK: Demo data (screenshots)
+    // MARK: Demo data (screenshots and the "Show sample data" switch)
+
+    /// Shows sample data, or goes back to the real settings and state.
+    func setDemo(_ on: Bool) {
+        UserDefaults.standard.set(on ? "active" : nil, forKey: AppEnvironment.demoDefaultsKey)
+        saveTask?.cancel()
+        loading = true
+        if on {
+            loadDemo("active")
+        } else {
+            // Clear the sample values first: load() only fills what is saved.
+            endpoint = ""; region = "auto"; bucket = ""; prefix = ""; usePathStyle = true
+            accessKeyID = ""; secretAccessKey = ""
+            state = EngineState()
+            connection = .idle
+            formProblems = []
+            userEdited = false
+            load()
+        }
+        loading = false
+        if !on {
+            Task { await onForeground() }
+        }
+    }
 
     private func loadDemo(_ scenario: String) {
         endpoint = "https://4f2c9e7a1b.r2.cloudflarestorage.com"

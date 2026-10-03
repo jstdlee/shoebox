@@ -2,6 +2,8 @@ import SwiftUI
 
 /// The few concepts a new user meets, in the order they meet them.
 struct HelpView: View {
+    @EnvironmentObject private var model: AppModel
+
     private struct Concept: Identifiable {
         let id = UUID()
         let symbol: String
@@ -25,7 +27,26 @@ struct HelpView: View {
     ]
 
     var body: some View {
-        List(concepts) { concept in
+        List {
+            Section {
+                ForEach(concepts) { concept in
+                    row(concept)
+                }
+            }
+            Section {
+                Toggle(isOn: Binding(get: { model.isDemo }, set: { model.setDemo($0) })) {
+                    RowLabel(title: "Show sample data", detail: "See the app with sample backups. Nothing is uploaded.")
+                }
+            } header: {
+                Text("Demo")
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("How Shoebox works")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func row(_ concept: Concept) -> some View {
             HStack(alignment: .top, spacing: 14) {
                 Image(systemName: concept.symbol)
                     .font(.title3)
@@ -40,9 +61,5 @@ struct HelpView: View {
             }
             .padding(.vertical, 4)
             .accessibilityElement(children: .combine)
-        }
-        .listStyle(.insetGrouped)
-        .navigationTitle("How Shoebox works")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }

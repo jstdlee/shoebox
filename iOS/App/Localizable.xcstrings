@@ -485,6 +485,28 @@
         }
       }
     },
+    "Demo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "演示"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デモ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데모"
+          }
+        }
+      }
+    },
     "Each backup is a full copy of your library. iOS picks the exact time, usually while charging on Wi-Fi.": {
       "localizations": {
         "zh-Hans": {
@@ -1057,6 +1079,28 @@
         }
       }
     },
+    "See the app with sample backups. Nothing is uploaded.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用示例备份查看 App。不会上传任何内容。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サンプルのバックアップでアプリを確認します。何もアップロードしません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "샘플 백업으로 앱을 살펴봅니다. 아무것도 업로드하지 않습니다."
+          }
+        }
+      }
+    },
     "Settings": {
       "localizations": {
         "zh-Hans": {
@@ -1144,6 +1188,50 @@
           "stringUnit": {
             "state": "translated",
             "value": "설정한 일수가 지나면 Shoebox가 새 백업을 시작합니다. 정확한 시간은 iOS가 정합니다."
+          }
+        }
+      }
+    },
+    "Show sample data": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示示例数据"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サンプルデータを表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "샘플 데이터 표시"
+          }
+        }
+      }
+    },
+    "Showing sample data. Tap to turn it off.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在显示示例数据。轻点以关闭。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サンプルデータを表示中。タップしてオフにします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "샘플 데이터를 표시하는 중. 탭하여 끕니다."
           }
         }
       }
