@@ -187,7 +187,9 @@ public final class BackupEngine {
     /// toggled the extension). Queue them again.
     private func reconcileLostJobs(_ state: inout EngineState) throws {
         guard var active = state.active, !active.inFlight.isEmpty else { return }
-        guard try queue.processingJobCount() == 0, try queue.finishedJobs().isEmpty else { return }
+        // Only when the OS can count jobs; otherwise we can't tell lost from pending.
+        guard let processing = try queue.processingJobCount(), processing == 0,
+              try queue.finishedJobs().isEmpty else { return }
         for (key, flight) in active.inFlight.sorted(by: { $0.key < $1.key }) {
             active.retries.append(PendingRetry(key: key, assetID: flight.assetID, resource: flight.resource, attempts: flight.attempts))
         }
@@ -214,7 +216,9 @@ public final class BackupEngine {
 
     private func createJobs(_ state: inout EngineState, presigner: S3Client, shouldStop: () -> Bool) throws {
         guard var active = state.active else { return }
-        let outstanding = try queue.processingJobCount() + queue.finishedJobs().count
+        // Without an OS count, assume every job we track is still in flight.
+        let processing = try queue.processingJobCount() ?? active.inFlight.count
+        let outstanding = processing + (try queue.finishedJobs().count)
         var capacity = queue.jobLimit - outstanding
         guard capacity > 0 else { return }
 

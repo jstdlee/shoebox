@@ -54,8 +54,8 @@ public protocol UploadJobQueue: AnyObject {
     var jobLimit: Int { get }
     /// Jobs that finished (succeeded or failed) and wait for acknowledgement.
     func finishedJobs() throws -> [UploadJobInfo]
-    /// Registered or pending jobs.
-    func processingJobCount() throws -> Int
+    /// Registered or pending jobs, or nil when the OS can't tell (iOS < 26.5).
+    func processingJobCount() throws -> Int?
     func acknowledge(jobIDs: [String]) throws
     /// Creates all jobs atomically (one change block). Throws
     /// `.limitExceeded` if they don't fit. A job whose resource vanished may be

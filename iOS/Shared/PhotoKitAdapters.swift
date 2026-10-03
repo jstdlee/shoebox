@@ -94,15 +94,17 @@ final class PhotoKitJobQueue: UploadJobQueue {
         for i in 0..<result.count {
             let job = result.object(at: i)
             seen[job.localIdentifier] = job
-            let error = job.error as NSError?
+            var error: NSError?
+            if #available(iOS 26.4, *) { error = job.error as NSError? }
             jobs.append(UploadJobInfo(id: job.localIdentifier, destination: job.destination.url,
                                       state: Self.state(job.state), errorDomain: error?.domain, errorCode: error?.code))
         }
         return jobs
     }
 
-    func processingJobCount() throws -> Int {
-        PHAssetResourceUploadJob.fetchJobs(action: .process, options: nil).count
+    func processingJobCount() throws -> Int? {
+        guard #available(iOS 26.5, *) else { return nil }
+        return PHAssetResourceUploadJob.fetchJobs(action: .process, options: nil).count
     }
 
     func acknowledge(jobIDs: [String]) throws {

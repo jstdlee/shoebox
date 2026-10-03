@@ -437,6 +437,28 @@ final class BackupEngineTests: XCTestCase {
         XCTAssertEqual(try onlyManifest().files.count, 2)
     }
 
+    func testWithoutProcessingCountUsesOwnInFlightCount() async throws {
+        queue.canCountProcessing = false
+        queue.jobLimit = 3
+        for i in 0..<5 { library.addPhoto("a\(i)") }
+        _ = await engine().run()
+        XCTAssertEqual(queue.created.count, 3)
+        _ = await engine().run()
+        XCTAssertEqual(queue.created.count, 3, "own in-flight count fills the limit")
+        await runToCompletion()
+        XCTAssertEqual(try onlyManifest().files.count, 5)
+    }
+
+    func testWithoutProcessingCountLostJobsAreNotGuessed() async throws {
+        queue.canCountProcessing = false
+        library.addPhoto("a")
+        _ = await engine().run()
+        queue.dropAll()
+        _ = await engine().run()
+        XCTAssertEqual(queue.created.count, 1, "can't tell lost from pending, so no duplicate job")
+        XCTAssertEqual(try state().active?.inFlight.count, 1)
+    }
+
     func testForeignJobsAreAcknowledgedAndIgnored() async throws {
         library.addPhoto("a")
         _ = await engine().run()

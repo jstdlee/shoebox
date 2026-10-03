@@ -100,8 +100,12 @@ final class FakeJobQueue: UploadJobQueue {
         jobs.filter { $0.state == .succeeded || $0.state == .failed }.map(info)
     }
 
-    func processingJobCount() throws -> Int {
-        jobs.filter { $0.state == .registered || $0.state == .pending }.count
+    /// Simulates iOS 26.1–26.4, where pending jobs can't be counted.
+    var canCountProcessing = true
+
+    func processingJobCount() throws -> Int? {
+        guard canCountProcessing else { return nil }
+        return jobs.filter { $0.state == .registered || $0.state == .pending }.count
     }
 
     func acknowledge(jobIDs: [String]) throws {
