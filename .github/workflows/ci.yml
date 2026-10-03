@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          XCODE=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Install tools
+        run: brew install xcodegen xcbeautify
+
+      - name: Pick simulator
+        run: echo "SIM_UDID=$(scripts/pick-simulator.sh)" >> "$GITHUB_ENV"
+
+      - name: Unit tests (ShoeboxCore on iOS Simulator)
+        working-directory: ShoeboxCore
+        run: |
+          set -o pipefail
+          xcodebuild test -scheme ShoeboxCore -destination "id=$SIM_UDID" \
+            -resultBundlePath ../build/CoreTests.xcresult | xcbeautify
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build app + upload extension (Simulator)
+        run: |
+          set -o pipefail
+          xcodebuild build -project Shoebox.xcodeproj -scheme Shoebox \
+            -destination "id=$SIM_UDID" -derivedDataPath build/sim \
+            CODE_SIGNING_ALLOWED=NO | xcbeautify
+
+      - name: Build for device (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild build -project Shoebox.xcodeproj -scheme Shoebox \
+            -destination 'generic/platform=iOS' -derivedDataPath build/device \
+            CODE_SIGNING_ALLOWED=NO | xcbeautify
+
+      - name: Gallery screenshots
+        run: scripts/screenshots.sh "$SIM_UDID" build/sim/Build/Products/Debug-iphonesimulator/Shoebox.app docs/gallery
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-and-results
+          path: |
+            docs/gallery
+            build/*.xcresult
+          if-no-files-found: ignore
+
+      - name: Commit updated gallery
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/gallery
+          if git diff --cached --quiet; then
+            echo "gallery unchanged"
+          else
+            git commit -m "Update gallery screenshots [skip ci]"
+            git push
+          fi

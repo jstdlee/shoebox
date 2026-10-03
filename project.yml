@@ -1,0 +1,103 @@
+# XcodeGen spec. On a Mac:  brew install xcodegen && xcodegen generate && open Shoebox.xcodeproj
+# CI (.github/workflows/ci.yml) generates and builds it the same way.
+#
+# Change these before the first build:
+#   SHOEBOX_BUNDLE_ID        your reverse-DNS bundle id (App Group / Keychain ids derive from it)
+#   SHOEBOX_UPLOAD_URL_BASE  the S3 endpoint the upload extension may talk to. Apple requires
+#                            it in the extension's Info.plist, so it is fixed per build.
+#                            R2: https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+#                            AWS: https://s3.<region>.amazonaws.com (path-style)
+#   DEVELOPMENT_TEAM         your Apple team id
+name: Shoebox
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "26.1"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SHOEBOX_BUNDLE_ID: com.example.shoebox
+    SHOEBOX_UPLOAD_URL_BASE: https://ACCOUNT_ID.r2.cloudflarestorage.com
+    DEVELOPMENT_TEAM: ""
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+
+packages:
+  ShoeboxCore:
+    path: ShoeboxCore
+
+targets:
+  Shoebox:
+    type: application
+    platform: iOS
+    sources:
+      - iOS/App
+      - iOS/Shared
+    dependencies:
+      - package: ShoeboxCore
+      - target: ShoeboxUpload
+        embed: true
+        codeSign: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(SHOEBOX_BUNDLE_ID)
+        INFOPLIST_KEY_CFBundleDisplayName: Shoebox
+    info:
+      path: iOS/App/Info.plist
+      properties:
+        CFBundleDisplayName: Shoebox
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSPhotoLibraryUsageDescription: Shoebox backs up your photos and videos to your own S3-compatible storage.
+        UIBackgroundModes: [fetch]
+        BGTaskSchedulerPermittedIdentifiers: [$(SHOEBOX_BUNDLE_ID).refresh]
+        ShoeboxRefreshTaskID: $(SHOEBOX_BUNDLE_ID).refresh
+        ShoeboxAppGroup: group.$(SHOEBOX_BUNDLE_ID)
+        ShoeboxKeychainGroup: $(AppIdentifierPrefix)$(SHOEBOX_BUNDLE_ID).shared
+        BackgroundUploadURLBase: $(SHOEBOX_UPLOAD_URL_BASE)
+    entitlements:
+      path: iOS/App/Shoebox.entitlements
+      properties:
+        com.apple.security.application-groups: [group.$(SHOEBOX_BUNDLE_ID)]
+        keychain-access-groups: [$(AppIdentifierPrefix)$(SHOEBOX_BUNDLE_ID).shared]
+
+  # PhotoKit Background Resource Upload extension (ExtensionKit, iOS 26.1+).
+  # If your XcodeGen version can't embed ExtensionKit extensions, create the
+  # target in Xcode instead: File > New > Target > Generic Extension, then add
+  # the files below and the Info.plist keys listed here.
+  ShoeboxUpload:
+    type: extensionkit-extension
+    platform: iOS
+    sources:
+      - iOS/UploadExtension
+      - iOS/Shared
+    dependencies:
+      - package: ShoeboxCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(SHOEBOX_BUNDLE_ID).upload
+    info:
+      path: iOS/UploadExtension/Info.plist
+      properties:
+        CFBundleDisplayName: Shoebox Upload
+        EXAppExtensionAttributes:
+          EXExtensionPointIdentifier: com.apple.photos.background-upload
+        BackgroundUploadURLBase: $(SHOEBOX_UPLOAD_URL_BASE)
+        ShoeboxRefreshTaskID: $(SHOEBOX_BUNDLE_ID).refresh
+        ShoeboxAppGroup: group.$(SHOEBOX_BUNDLE_ID)
+        ShoeboxKeychainGroup: $(AppIdentifierPrefix)$(SHOEBOX_BUNDLE_ID).shared
+    entitlements:
+      path: iOS/UploadExtension/ShoeboxUpload.entitlements
+      properties:
+        com.apple.security.application-groups: [group.$(SHOEBOX_BUNDLE_ID)]
+        keychain-access-groups: [$(AppIdentifierPrefix)$(SHOEBOX_BUNDLE_ID).shared]
+
+schemes:
+  Shoebox:
+    build:
+      targets:
+        Shoebox: all
+        ShoeboxUpload: all
