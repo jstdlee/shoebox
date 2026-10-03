@@ -1,0 +1,101 @@
+name: Release
+
+# Push a tag like v0.1.0 to build the IPA and publish a release page.
+# The notes come from the matching "## v0.1.0" section of CHANGELOG.md.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to release (e.g. v0.1.0)
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      # Optional repo variable: Settings › Secrets and variables › Actions › Variables.
+      UPLOAD_BASE: ${{ vars.SHOEBOX_UPLOAD_URL_BASE || 'https://ACCOUNT_ID.r2.cloudflarestorage.com' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Select newest Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_*.app | grep -v -i beta | sort -V | tail -1)
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Install tools
+        run: brew install xcodegen xcbeautify
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v tag="$TAG" '
+            /^## / { on = (index($0, "## " tag " ") == 1 || $0 == "## " tag); next }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md has no section for $TAG"
+            exit 1
+          fi
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          UDID=$(scripts/pick-simulator.sh)
+          cd ShoeboxCore
+          xcodebuild test -scheme ShoeboxCore -destination "id=$UDID" | xcbeautify
+
+      - name: Build IPA (unsigned)
+        run: |
+          set -o pipefail
+          xcodegen generate
+          VERSION="${TAG#v}"
+          xcodebuild build -project Shoebox.xcodeproj -scheme Shoebox -configuration Release \
+            -destination 'generic/platform=iOS' -derivedDataPath build/release \
+            CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            SHOEBOX_UPLOAD_URL_BASE="$UPLOAD_BASE" | xcbeautify
+          mkdir -p dist/Payload
+          cp -R build/release/Build/Products/Release-iphoneos/Shoebox.app dist/Payload/
+          (cd dist && zip -qry "Shoebox-$TAG.ipa" Payload && rm -rf Payload)
+          (cd dist && shasum -a 256 "Shoebox-$TAG.ipa" > "Shoebox-$TAG.ipa.sha256")
+          ls -la dist
+
+      - name: Add install section to the notes
+        run: |
+          cat >> notes.md <<NOTES
+
+          ## Install
+
+          | File | What it is |
+          |---|---|
+          | \`Shoebox-$TAG.ipa\` | Unsigned app for iPhone (iOS 26.1+) |
+          | \`Shoebox-$TAG.ipa.sha256\` | SHA-256 checksum |
+
+          - The IPA is **not signed**. Sign and install it with your own Apple ID, for example with
+            [Sideloadly](https://sideloadly.io) or [AltStore](https://altstore.io), or build from source in Xcode.
+          - This IPA uploads only under **\`$UPLOAD_BASE\`**. For another endpoint, build from source
+            and set \`SHOEBOX_UPLOAD_URL_BASE\` in \`project.yml\`.
+          - Background backup needs the App Group entitlement that is shared by the app and the extension.
+            Some sideload tools remove it. For full background support, build and sign in Xcode with your own team.
+          NOTES
+
+      - name: Publish release page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" dist/* --title "Shoebox $TAG" --notes-file notes.md
+          fi

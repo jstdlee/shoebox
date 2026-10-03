@@ -1,6 +1,7 @@
 # Shoebox
 
 [![CI](https://github.com/jstdlee/shoebox/actions/workflows/ci.yml/badge.svg)](https://github.com/jstdlee/shoebox/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/jstdlee/shoebox)](https://github.com/jstdlee/shoebox/releases/latest)
 
 A small iOS app (Swift, iOS 26.1+) that backs up the whole photo library to
 S3-compatible storage, such as Cloudflare R2, AWS S3, MinIO or Backblaze B2, **in the background**.
@@ -24,6 +25,22 @@ Screenshots come from the app's demo mode. CI makes them again on every push to 
 The app follows Apple's iOS patterns: a large-title status screen with the main action in thumb
 reach, settings one tap away, SF Symbols, Dynamic Type, haptics, VoiceOver labels, and
 English, 简体中文, 日本語 and 한국어.
+
+## Download
+
+Get the newest IPA from the [release page](https://github.com/jstdlee/shoebox/releases/latest).
+The release page also has the release notes. All versions are in [CHANGELOG.md](CHANGELOG.md).
+
+- The IPA is **unsigned**. Sign and install it with your own Apple ID (Sideloadly, AltStore),
+  or build from source (below).
+- The upload address is fixed when the app is built. The release page says which address the
+  IPA has. For your own endpoint, build from source.
+
+To make a release: add a `## vX.Y.Z — date` section to `CHANGELOG.md`, then push the tag:
+
+```bash
+git tag v0.1.1 && git push origin v0.1.1
+```
 
 ## How it works
 
@@ -67,6 +84,8 @@ iOS/UploadExtension/          PHBackgroundResourceUploadExtension entry point
 iOS/App/                      SwiftUI app (one settings/status screen)
 project.yml                   XcodeGen project (app + extension + package)
 .github/workflows/ci.yml      tests, Simulator + device builds, gallery screenshots
+.github/workflows/release.yml tag → tests, unsigned IPA, release page with notes
+CHANGELOG.md                  release notes, one section per version
 scripts/pick-simulator.sh     CI: choose an iPhone simulator
 scripts/screenshots.sh        CI: demo-mode screenshots for the gallery
 scripts/restore.sh            list / download snapshots with the AWS CLI
