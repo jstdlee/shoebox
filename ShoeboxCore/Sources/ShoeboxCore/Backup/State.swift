@@ -50,12 +50,23 @@ public struct PlanCursor: Codable, Equatable, Sendable {
     public var asset: Int = 0
     /// Index into the selected resources of that asset.
     public var resource: Int = 0
+
+    public init(asset: Int = 0, resource: Int = 0) {
+        self.asset = asset
+        self.resource = resource
+    }
 }
 
 public struct InFlightJob: Codable, Equatable, Sendable {
     public var assetID: String
     public var resource: ResourceInfo
     public var attempts: Int
+
+    public init(assetID: String, resource: ResourceInfo, attempts: Int) {
+        self.assetID = assetID
+        self.resource = resource
+        self.attempts = attempts
+    }
 }
 
 public struct PendingRetry: Codable, Equatable, Sendable {
